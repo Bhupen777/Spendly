@@ -257,6 +257,87 @@ a { color: inherit; text-decoration: none; }
 }
 
 /* ------------------------------------------------------------------ */
+/* Hero animations                                                     */
+/* ------------------------------------------------------------------ */
+
+@keyframes fadeUp {
+    from { opacity: 0; transform: translateY(20px); }
+    to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes growBar {
+    from { width: 0; }
+    to   { width: var(--w); }
+}
+
+@keyframes heroParallax {
+    to { opacity: 0.35; transform: translateY(-40px); }
+}
+
+/* Staggered entrance — 0s / 0.15s / 0.3s, per spec */
+
+.hero-animated .hero-badge,
+.hero-animated .hero-title,
+.hero-animated .hero-subtitle,
+.hero-animated .hero-actions,
+.hero-animated .hero-visual {
+    animation: fadeUp 0.6s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.hero-animated .hero-badge    { animation-delay: 0s; }
+.hero-animated .hero-title    { animation-delay: 0s; }
+.hero-animated .hero-subtitle { animation-delay: 0.15s; }
+.hero-animated .hero-actions  { animation-delay: 0.3s; }
+.hero-animated .hero-visual   { animation-delay: 0.45s; }
+
+/* Mock-card bars grow on reveal. Width falls back to the full value,
+   so the chart is correct even if the JS never runs. */
+
+.mock-bar { width: var(--w); }
+
+.mock-card[data-bars="pending"] .mock-bar { width: 0; }
+
+.mock-card[data-bars="run"] .mock-bar {
+    animation: growBar 0.9s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.mock-card[data-bars="run"] .mock-bar-row:nth-child(1) .mock-bar { animation-delay: 0.00s; }
+.mock-card[data-bars="run"] .mock-bar-row:nth-child(2) .mock-bar { animation-delay: 0.08s; }
+.mock-card[data-bars="run"] .mock-bar-row:nth-child(3) .mock-bar { animation-delay: 0.16s; }
+.mock-card[data-bars="run"] .mock-bar-row:nth-child(4) .mock-bar { animation-delay: 0.24s; }
+
+/* Scroll-driven parallax. Native where supported; landing.html carries
+   a requestAnimationFrame fallback for everything else. */
+
+@supports (animation-timeline: scroll()) {
+    @media (prefers-reduced-motion: no-preference) {
+        .hero-animated {
+            animation: heroParallax linear both;
+            animation-timeline: scroll(root block);
+            animation-range: 0 70vh;
+        }
+    }
+}
+
+/* Accessibility — no non-essential motion */
+
+@media (prefers-reduced-motion: reduce) {
+    .hero-animated,
+    .hero-animated .hero-badge,
+    .hero-animated .hero-title,
+    .hero-animated .hero-subtitle,
+    .hero-animated .hero-actions,
+    .hero-animated .hero-visual,
+    .mock-card[data-bars] .mock-bar {
+        animation: none !important;
+        opacity: 1 !important;
+        transform: none !important;
+    }
+
+    .mock-card[data-bars] .mock-bar { width: var(--w); }
+}
+
+/* ------------------------------------------------------------------ */
 /* Buttons                                                             */
 /* ------------------------------------------------------------------ */
 
@@ -505,6 +586,62 @@ a { color: inherit; text-decoration: none; }
 .footer-copy {
     font-size: 0.8rem;
     color: var(--ink-faint);
+}
+
+/* ------------------------------------------------------------------ */
+/* Legal pages (terms, privacy)                                        */
+/* ------------------------------------------------------------------ */
+
+.legal-section {
+    padding: 4rem 2rem;
+}
+
+.legal-container {
+    width: 100%;
+    max-width: 720px;
+    margin: 0 auto;
+}
+
+.legal-header {
+    margin-bottom: 2.5rem;
+}
+
+.legal-title {
+    font-family: var(--font-display);
+    font-size: 2.5rem;
+    color: var(--ink);
+    margin-bottom: 0.5rem;
+}
+
+.legal-updated {
+    font-size: 0.875rem;
+    color: var(--ink-muted);
+}
+
+.legal-intro {
+    color: var(--ink-muted);
+}
+
+.legal-body h2 {
+    font-family: var(--font-display);
+    font-size: 1.375rem;
+    color: var(--ink);
+    margin-top: 2.5rem;
+    margin-bottom: 0.75rem;
+}
+
+.legal-body p {
+    color: var(--ink-soft);
+    margin-bottom: 1rem;
+}
+
+.legal-body ul {
+    color: var(--ink-soft);
+    margin: 0 0 1rem 1.25rem;
+}
+
+.legal-body li {
+    margin-bottom: 0.5rem;
 }
 
 /* ------------------------------------------------------------------ */
