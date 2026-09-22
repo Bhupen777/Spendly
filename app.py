@@ -244,25 +244,67 @@ def dashboard():
     )
 
 
-@app.route("/expenses/add", methods=["POST"])
-@login_required
-def add_expense():
-    amount_raw = request.form.get("amount", "").strip()
-    category_id = request.form.get("category_id", "").strip()
-    spent_on = request.form.get("spent_on", "").strip()
-    description = request.form.get("description", "").strip()
+def _owned_expense_or_404(expense_id):
+    """Fetch one of the signed-in user's expenses, or 404.
+
+    Scoping the lookup to the user means someone else's id is
+    indistinguishable from one that doesn't exist, so the response can't be
+    used to probe which ids are real.
+    """
+    expense = db.get_db().execute(
+        """
+        SELECT id, user_id, category_id, amount, description, spent_on
+        FROM expenses
+        WHERE id = ? AND user_id = ?
+        """,
+        (expense_id, session["user_id"]),
+    ).fetchone()
+
+    if expense is None:
+        abort(404)
+
+    return expense
+
+
+def _expense_form(form):
+    """Read and validate the fields shared by add and edit.
+
+    Returns ``(values, error)`` — ``error`` is None when the input is usable.
+    """
+    category_id = form.get("category_id", "").strip()
+    spent_on = form.get("spent_on", "").strip()
+    description = form.get("description", "").strip()
 
     try:
-        amount = float(amount_raw)
+        amount = float(form.get("amount", "").strip())
     except ValueError:
         amount = 0
 
+    error = None
     if amount <= 0:
-        flash("Enter an amount greater than zero.", "error")
+        error = "Enter an amount greater than zero."
     elif not category_id:
-        flash("Choose a category.", "error")
+        error = "Choose a category."
     elif not spent_on:
-        flash("Choose a date.", "error")
+        error = "Choose a date."
+
+    values = {
+        "amount": amount,
+        "category_id": category_id,
+        "spent_on": spent_on,
+        "description": description or None,
+    }
+
+    return values, error
+
+
+@app.route("/expenses/add", methods=["POST"])
+@login_required
+def add_expense():
+    values, error = _expense_form(request.form)
+
+    if error is not None:
+        flash(error, "error")
     else:
         conn = db.get_db()
         conn.execute(
@@ -270,7 +312,13 @@ def add_expense():
             INSERT INTO expenses (user_id, category_id, amount, description, spent_on)
             VALUES (?, ?, ?, ?, ?)
             """,
-            (session["user_id"], category_id, amount, description or None, spent_on),
+            (
+                session["user_id"],
+                values["category_id"],
+                values["amount"],
+                values["description"],
+                values["spent_on"],
+            ),
         )
         conn.commit()
         flash("Expense added.", "success")
@@ -278,21 +326,66 @@ def add_expense():
     return redirect(url_for("dashboard"))
 
 
+@app.route("/expenses/<int:id>/edit", methods=["GET", "POST"])
+@login_required
+def edit_expense(id):
+    expense = _owned_expense_or_404(id)
+    conn = db.get_db()
+
+    categories = conn.execute(
+        "SELECT id, name FROM categories ORDER BY name"
+    ).fetchall()
+
+    if request.method == "POST":
+        values, error = _expense_form(request.form)
+
+        if error is not None:
+            # Re-render with what they typed, so nothing has to be retyped.
+            return render_template(
+                "edit_expense.html",
+                expense=expense,
+                categories=categories,
+                values=values,
+                error=error,
+                today=date.today().isoformat(),
+            )
+
+        conn.execute(
+            """
+            UPDATE expenses
+            SET category_id = ?, amount = ?, description = ?, spent_on = ?
+            WHERE id = ? AND user_id = ?
+            """,
+            (
+                values["category_id"],
+                values["amount"],
+                values["description"],
+                values["spent_on"],
+                id,
+                session["user_id"],
+            ),
+        )
+        conn.commit()
+
+        flash("Expense updated.", "success")
+        return redirect(url_for("dashboard"))
+
+    return render_template(
+        "edit_expense.html",
+        expense=expense,
+        categories=categories,
+        values=dict(expense),
+        error=None,
+        today=date.today().isoformat(),
+    )
+
+
 @app.route("/expenses/<int:id>/delete", methods=["POST"])
 @login_required
 def delete_expense(id):
+    _owned_expense_or_404(id)
+
     conn = db.get_db()
-
-    # Scoping the lookup to the signed-in user means someone else's id is
-    # indistinguishable from one that doesn't exist.
-    expense = conn.execute(
-        "SELECT id FROM expenses WHERE id = ? AND user_id = ?",
-        (id, session["user_id"]),
-    ).fetchone()
-
-    if expense is None:
-        abort(404)
-
     conn.execute(
         "DELETE FROM expenses WHERE id = ? AND user_id = ?",
         (id, session["user_id"]),
@@ -311,12 +404,6 @@ def delete_expense(id):
 @login_required
 def profile():
     return "Profile page — coming in Step 4"
-
-
-@app.route("/expenses/<int:id>/edit")
-@login_required
-def edit_expense(id):
-    return "Edit expense — coming in Step 8"
 
 
 if __name__ == "__main__":

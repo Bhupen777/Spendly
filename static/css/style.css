@@ -799,7 +799,34 @@ button.nav-cta {
 .cell-date { color: var(--ink-muted); white-space: nowrap; }
 .cell-desc { color: var(--ink-muted); }
 
-.cell-actions { text-align: right; white-space: nowrap; }
+.cell-actions {
+    text-align: right;
+    white-space: nowrap;
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.25rem;
+}
+
+.btn-edit {
+    display: inline-block;
+    border: 1px solid transparent;
+    border-radius: var(--radius-sm);
+    padding: 0.25rem 0.55rem;
+    font-size: 0.78rem;
+    font-weight: 500;
+    color: var(--ink-faint);
+    transition: color 0.15s, background 0.15s, border-color 0.15s;
+}
+
+.btn-edit:hover,
+.btn-edit:focus-visible {
+    color: var(--accent);
+    background: var(--accent-light);
+    border-color: #cfe0d5;
+}
+
+/* A narrower shell for single-form pages like edit. */
+.dash-narrow { max-width: 720px; }
 
 .btn-delete {
     background: none;

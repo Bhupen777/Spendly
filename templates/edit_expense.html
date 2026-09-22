@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+
+{% block title %}Edit expense — Spendly{% endblock %}
+
+{% block content %}
+
+<section class="dash dash-narrow">
+
+    <div class="dash-header">
+        <div>
+            <h1 class="dash-title">Edit expense</h1>
+            <p class="dash-subtitle">Recorded on {{ expense['spent_on'] }}</p>
+        </div>
+    </div>
+
+    <div class="dash-panel">
+
+        {% if error %}
+        <div class="auth-error">{{ error }}</div>
+        {% endif %}
+
+        <form method="POST" action="{{ url_for('edit_expense', id=expense['id']) }}"
+              class="add-form">
+            <div class="add-field">
+                <label for="amount">Amount (₹)</label>
+                <input type="number" id="amount" name="amount" class="form-input"
+                       step="0.01" min="0.01" required autofocus
+                       value="{{ '%.2f' % values['amount'] if values['amount'] else '' }}">
+            </div>
+            <div class="add-field">
+                <label for="category_id">Category</label>
+                <select id="category_id" name="category_id" class="form-input" required>
+                    {% for category in categories %}
+                    <option value="{{ category['id'] }}"
+                        {% if category['id']|string == values['category_id']|string %}selected{% endif %}>
+                        {{ category['name'] }}
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="add-field">
+                <label for="spent_on">Date</label>
+                <input type="date" id="spent_on" name="spent_on" class="form-input"
+                       value="{{ values['spent_on'] }}" max="{{ today }}" required>
+            </div>
+            <div class="add-field add-field-wide">
+                <label for="description">Description <span class="add-optional">optional</span></label>
+                <input type="text" id="description" name="description" class="form-input"
+                       placeholder="Groceries" maxlength="120"
+                       value="{{ values['description'] or '' }}">
+            </div>
+            <div class="add-actions">
+                <button type="submit" class="btn-primary">Save changes</button>
+                <a href="{{ url_for('dashboard') }}" class="btn-ghost">Cancel</a>
+            </div>
+        </form>
+
+    </div>
+
+</section>
+
+{% endblock %}
