@@ -27,10 +27,11 @@ monthly totals and a category breakdown.
 | Database | SQLite (`sqlite3`, standard library) — no ORM |
 | Auth | `werkzeug.security` hashing + Flask sessions |
 | CSRF | Flask-WTF 1.3.0 (`CSRFProtect`) |
+| Config | python-dotenv 1.2.3 (`.env`) |
 | Testing | pytest 8.3.5 + pytest-flask 1.3.0 |
 | Frontend | Vanilla CSS and JavaScript, no build step |
 
-Five direct dependencies. No Node, no bundler, no database server.
+Six direct dependencies. No Node, no bundler, no database server.
 
 ## Getting started
 
@@ -100,22 +101,30 @@ The app starts on **http://127.0.0.1:5001** with debug mode and auto-reload enab
 
 ## Configuration
 
-| Variable | Default | Purpose |
+| Variable | Required | Purpose |
 |---|---|---|
-| `SECRET_KEY` | `dev-only-insecure-key` | Signs session cookies |
+| `SECRET_KEY` | yes | Signs session cookies and CSRF tokens |
 
-The fallback is fine locally. Set a real value anywhere else — with the default in
-place, session cookies are forgeable:
+Settings are read from a `.env` file in the project root, which is gitignored.
+Copy the template and fill it in:
 
 ```bash
-# macOS / Linux
-export SECRET_KEY="$(python -c 'import secrets; print(secrets.token_hex(32))')"
+cp .env.example .env
 ```
 
-```powershell
-# Windows (PowerShell)
-$env:SECRET_KEY = python -c "import secrets; print(secrets.token_hex(32))"
+Generate a value:
+
+```bash
+python -c "import secrets; print(secrets.token_hex(32))"
 ```
+
+**There is no fallback.** The app raises at startup if `SECRET_KEY` is missing,
+rather than booting with a default that makes every session cookie and CSRF token
+forgeable. Real environment variables take precedence over `.env`, so a
+deployment's own configuration is never overridden by a stray file.
+
+> Changing the key invalidates existing sessions — everyone signed in is signed
+> out, which is the correct behaviour if a key was ever exposed.
 
 ## Project structure
 
@@ -123,6 +132,7 @@ $env:SECRET_KEY = python -c "import secrets; print(secrets.token_hex(32))"
 expense-tracker/
 ├── app.py                    # Routes, auth helpers, template filters
 ├── requirements.txt          # Pinned dependencies
+├── .env.example              # Template for .env (gitignored)
 ├── database/
 │   ├── __init__.py
 │   └── db.py                 # Connection, schema, seed data
@@ -196,10 +206,6 @@ Routes marked ✅ require a session; anonymous visitors are redirected to
   carries `{{ csrf_token() }}` as a hidden field.
 
 ## Known gaps
-
-- **`SECRET_KEY` has a hardcoded fallback** — see [Configuration](#configuration).
-  CSRF tokens are signed with it too, so a known key undermines that protection
-  as well as session integrity.
 - **`amount` is stored as `REAL`.** Floats can't represent every decimal exactly,
   so large sums can drift by fractions of a paisa. Integer paise is the rigorous
   alternative; cheaper to change before there's data to migrate.

@@ -12,16 +12,33 @@ from flask import (
     session,
     url_for,
 )
+from dotenv import load_dotenv
 from flask_wtf.csrf import CSRFError, CSRFProtect
 from werkzeug.security import check_password_hash, generate_password_hash
 
 from database import db
 
+# Reads .env into the environment. Real environment variables win, so a
+# deployment's own config is never overwritten by a stray file.
+load_dotenv()
+
 app = Flask(__name__)
 
-# Sessions need a signing key. Set SECRET_KEY in the environment for anything
-# that isn't local development.
-app.secret_key = os.environ.get("SECRET_KEY", "dev-only-insecure-key")
+# Signs session cookies and CSRF tokens. No fallback on purpose: a default
+# everyone can read makes both forgeable, and failing at startup is easier to
+# notice than a quietly insecure app.
+SECRET_KEY = os.environ.get("SECRET_KEY")
+
+if not SECRET_KEY:
+    raise RuntimeError(
+        "SECRET_KEY is not set.\n"
+        "Create a .env file in the project root containing:\n\n"
+        "    SECRET_KEY=<random value>\n\n"
+        "Generate one with:\n"
+        "    python -c \"import secrets; print(secrets.token_hex(32))\""
+    )
+
+app.secret_key = SECRET_KEY
 
 # Rejects any POST without a valid token, so every form has to opt in rather
 # than remember to. Templates get csrf_token() for free.
