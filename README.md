@@ -3,9 +3,19 @@
 A personal expense tracker built with Flask. Log expenses, understand your spending
 patterns, and take control of your financial life — one transaction at a time.
 
-> **Status:** work in progress. The landing, register, and login pages are built;
-> the expense CRUD routes and the database layer are still stubs. See
-> [Project status](#project-status) below.
+Register an account, record what you spend, and see where your money goes with
+monthly totals and a category breakdown.
+
+> **Status:** feature-complete for its intended scope. See
+> [Known gaps](#known-gaps) before deploying it anywhere public.
+
+## Features
+
+- **Accounts** — register and sign in; passwords are hashed, never stored in plain text
+- **Dashboard** — every expense listed newest-first, with monthly and all-time totals
+- **Category breakdown** — current month's spending by category, as scaled bars
+- **Full CRUD** — add expenses inline, edit them on their own page, delete with confirmation
+- **Profile** — account summary, editable name and email, password change
 
 ## Tech stack
 
@@ -14,9 +24,12 @@ patterns, and take control of your financial life — one transaction at a time.
 | Language | Python 3.12 |
 | Framework | Flask 3.1.3 |
 | Templating | Jinja2 |
-| Database | SQLite (`sqlite3`, standard library) |
+| Database | SQLite (`sqlite3`, standard library) — no ORM |
+| Auth | `werkzeug.security` hashing + Flask sessions |
 | Testing | pytest 8.3.5 + pytest-flask 1.3.0 |
 | Frontend | Vanilla CSS and JavaScript, no build step |
+
+Four direct dependencies. No Node, no bundler, no database server.
 
 ## Getting started
 
@@ -60,6 +73,22 @@ Install dependencies:
 pip install -r requirements.txt
 ```
 
+> If activation is blocked on Windows with an execution-policy error, either run
+> `Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass` first, or use
+> `.\venv\Scripts\activate.bat` instead.
+
+### Create the database
+
+```bash
+python -m database.db
+```
+
+This creates `expense_tracker.db` in the project root and seeds it with default
+categories plus a demo account. Both steps are idempotent — re-running will not
+duplicate anything.
+
+**Demo login:** `demo@spendly.app` / `spendly123`
+
 ### Run
 
 ```bash
@@ -68,66 +97,111 @@ python app.py
 
 The app starts on **http://127.0.0.1:5001** with debug mode and auto-reload enabled.
 
-> If activation is blocked on Windows with an execution-policy error, either run
-> `Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass` first, or use
-> `.\venv\Scripts\activate.bat` instead.
+## Configuration
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `SECRET_KEY` | `dev-only-insecure-key` | Signs session cookies |
+
+The fallback is fine locally. Set a real value anywhere else — with the default in
+place, session cookies are forgeable:
+
+```bash
+# macOS / Linux
+export SECRET_KEY="$(python -c 'import secrets; print(secrets.token_hex(32))')"
+```
+
+```powershell
+# Windows (PowerShell)
+$env:SECRET_KEY = python -c "import secrets; print(secrets.token_hex(32))"
+```
 
 ## Project structure
 
 ```
 expense-tracker/
-├── app.py                 # Flask application and route definitions
-├── requirements.txt       # Pinned dependencies
+├── app.py                    # Routes, auth helpers, template filters
+├── requirements.txt          # Pinned dependencies
 ├── database/
 │   ├── __init__.py
-│   └── db.py              # Connection, schema, and seed helpers
+│   └── db.py                 # Connection, schema, seed data
 ├── templates/
-│   ├── base.html          # Shared layout — navbar, footer, blocks
-│   ├── landing.html       # Marketing / home page
+│   ├── base.html             # Shared layout — navbar, flashes, footer
+│   ├── landing.html          # Marketing / home page
 │   ├── login.html
-│   └── register.html
+│   ├── register.html
+│   ├── dashboard.html        # Expense list, totals, add form
+│   ├── edit_expense.html
+│   ├── profile.html
+│   ├── terms.html
+│   └── privacy.html
 └── static/
     ├── css/style.css
     └── js/main.js
 ```
 
+## Database
+
+Three tables, created by `init_db()`:
+
+```sql
+users       id, name, email (UNIQUE, case-insensitive), password_hash, created_at
+categories  id, name (UNIQUE)
+expenses    id, user_id → users, category_id → categories,
+            amount (CHECK > 0), description, spent_on, created_at
+```
+
+Indexed on `(user_id, spent_on)`, since every expense query filters that pair.
+
+`get_db()` enables the `foreign_keys` pragma on every connection. SQLite leaves it
+off by default and scopes it per connection — without it, `ON DELETE CASCADE` is
+silently ignored.
+
+Inside a request the connection is cached on `g` and closed on teardown, wired up
+by `db.init_app(app)` in `app.py`.
+
 ## Routes
 
-| Route | Method | Status |
-|---|---|---|
-| `/` | GET | ✅ Landing page |
-| `/register` | GET | ✅ Registration form |
-| `/login` | GET | ✅ Login form |
-| `/logout` | GET | 🚧 Placeholder |
-| `/profile` | GET | 🚧 Placeholder |
-| `/expenses/add` | GET | 🚧 Placeholder |
-| `/expenses/<id>/edit` | GET | 🚧 Placeholder |
-| `/expenses/<id>/delete` | GET | 🚧 Placeholder |
+| Route | Methods | Auth | Purpose |
+|---|---|---|---|
+| `/` | GET | — | Landing page |
+| `/register` | GET, POST | — | Create an account |
+| `/login` | GET, POST | — | Sign in |
+| `/logout` | POST | — | Sign out |
+| `/terms` | GET | — | Terms and Conditions |
+| `/privacy` | GET | — | Privacy Policy |
+| `/dashboard` | GET | ✅ | Expenses, totals, category breakdown |
+| `/expenses/add` | POST | ✅ | Create an expense |
+| `/expenses/<id>/edit` | GET, POST | ✅ | Edit an expense |
+| `/expenses/<id>/delete` | POST | ✅ | Delete an expense |
+| `/profile` | GET | ✅ | Account summary |
+| `/profile/details` | POST | ✅ | Update name and email |
+| `/profile/password` | POST | ✅ | Change password |
 
-## Project status
+Routes marked ✅ require a session; anonymous visitors are redirected to
+`/login?next=…` and returned afterwards.
 
-The frontend is complete; the backend is being filled in step by step.
+### Design notes
 
-- [ ] **Step 1** — Database setup: `get_db()`, `init_db()`, `seed_db()` in `database/db.py`
-- [ ] **Step 2** — User registration with hashed passwords
-- [ ] **Step 3** — Login and logout via sessions
-- [ ] **Step 4** — Profile page
-- [ ] **Step 5** — Expense list view
-- [ ] **Step 6** — Category breakdown and monthly summary
-- [ ] **Step 7** — Add expense
-- [ ] **Step 8** — Edit expense
-- [ ] **Step 9** — Delete expense
+- **Everything destructive is POST-only.** A `GET` delete would let a prefetch or
+  an image tag destroy a row.
+- **Ownership is enforced in the SQL.** Both the lookup and the write filter on
+  `user_id`, and another user's id returns **404, not 403** — a 403 would confirm
+  the row exists.
+- **Login reports one message** for unknown email and wrong password alike, so the
+  form can't be used to enumerate accounts.
 
-Notes for whoever picks this up:
+## Known gaps
 
-- `app.secret_key` is not set yet. Sessions in Step 3 will need it — load it from
-  a `.env` file, which is already listed in `.gitignore`.
-- The SQLite database is expected at `expense_tracker.db` in the project root
-  (also gitignored, so it stays out of version control).
-- Password hashing needs no extra dependency: Werkzeug ships
-  `generate_password_hash` and `check_password_hash` in `werkzeug.security`.
-- The edit and delete routes are currently GET-only. They should accept `POST`
-  before they do anything destructive.
+- **No CSRF tokens.** Every POST route accepts a cross-site submission. `Flask-WTF`
+  would cover all of them in one pass. This is the most important gap.
+- **`SECRET_KEY` has a hardcoded fallback** — see [Configuration](#configuration).
+- **`amount` is stored as `REAL`.** Floats can't represent every decimal exactly,
+  so large sums can drift by fractions of a paisa. Integer paise is the rigorous
+  alternative; cheaper to change before there's data to migrate.
+- **No tests.** pytest and pytest-flask are installed but `tests/` doesn't exist.
+- **Dev server only.** `app.run(debug=True)` is not for production — use a WSGI
+  server such as Waitress or Gunicorn.
 
 ## Testing
 
