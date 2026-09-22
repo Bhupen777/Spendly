@@ -397,13 +397,110 @@ def delete_expense(id):
 
 
 # ------------------------------------------------------------------ #
-# Placeholder routes — students will implement these                  #
+# Profile                                                             #
 # ------------------------------------------------------------------ #
 
 @app.route("/profile")
 @login_required
 def profile():
-    return "Profile page — coming in Step 4"
+    conn = db.get_db()
+    user_id = session["user_id"]
+
+    stats = conn.execute(
+        """
+        SELECT
+            COUNT(*)                   AS entries,
+            COALESCE(SUM(amount), 0)   AS total,
+            MIN(spent_on)              AS first_on,
+            MAX(spent_on)              AS last_on
+        FROM expenses
+        WHERE user_id = ?
+        """,
+        (user_id,),
+    ).fetchone()
+
+    top_category = conn.execute(
+        """
+        SELECT c.name, SUM(e.amount) AS total
+        FROM expenses e
+        JOIN categories c ON c.id = e.category_id
+        WHERE e.user_id = ?
+        GROUP BY c.name
+        ORDER BY total DESC
+        LIMIT 1
+        """,
+        (user_id,),
+    ).fetchone()
+
+    return render_template(
+        "profile.html",
+        stats=stats,
+        top_category=top_category,
+    )
+
+
+@app.route("/profile/details", methods=["POST"])
+@login_required
+def update_profile():
+    name = request.form.get("name", "").strip()
+    email = request.form.get("email", "").strip()
+
+    conn = db.get_db()
+    user_id = session["user_id"]
+
+    if not name:
+        flash("Please enter your name.", "error")
+    elif not email:
+        flash("Please enter your email address.", "error")
+    else:
+        # COLLATE NOCASE on the column makes this check case-insensitive.
+        clash = conn.execute(
+            "SELECT id FROM users WHERE email = ? AND id != ?",
+            (email, user_id),
+        ).fetchone()
+
+        if clash is not None:
+            flash("That email is already used by another account.", "error")
+        else:
+            conn.execute(
+                "UPDATE users SET name = ?, email = ? WHERE id = ?",
+                (name, email, user_id),
+            )
+            conn.commit()
+            flash("Profile updated.", "success")
+
+    return redirect(url_for("profile"))
+
+
+@app.route("/profile/password", methods=["POST"])
+@login_required
+def change_password():
+    current = request.form.get("current_password", "")
+    new = request.form.get("new_password", "")
+    confirm = request.form.get("confirm_password", "")
+
+    conn = db.get_db()
+    user_id = session["user_id"]
+
+    user = conn.execute(
+        "SELECT password_hash FROM users WHERE id = ?", (user_id,)
+    ).fetchone()
+
+    if not check_password_hash(user["password_hash"], current):
+        flash("Your current password is incorrect.", "error")
+    elif len(new) < 8:
+        flash("New password must be at least 8 characters.", "error")
+    elif new != confirm:
+        flash("New passwords do not match.", "error")
+    else:
+        conn.execute(
+            "UPDATE users SET password_hash = ? WHERE id = ?",
+            (generate_password_hash(new), user_id),
+        )
+        conn.commit()
+        flash("Password changed.", "success")
+
+    return redirect(url_for("profile"))
 
 
 if __name__ == "__main__":

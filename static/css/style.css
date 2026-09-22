@@ -825,8 +825,20 @@ button.nav-cta {
     border-color: #cfe0d5;
 }
 
-/* A narrower shell for single-form pages like edit. */
+/* A narrower shell for single-form pages like edit and profile. */
 .dash-narrow { max-width: 720px; }
+
+.profile-range {
+    font-size: 0.85rem;
+    color: var(--ink-muted);
+    margin-bottom: 1.5rem;
+}
+
+.profile-range a { color: var(--accent); text-decoration: underline; }
+
+.profile-panel { margin-bottom: 1.5rem; }
+
+.profile-panel:last-child { margin-bottom: 0; }
 
 .btn-delete {
     background: none;

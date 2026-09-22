@@ -1,0 +1,100 @@
+{% extends "base.html" %}
+
+{% block title %}Profile — Spendly{% endblock %}
+
+{% block content %}
+
+<section class="dash dash-narrow">
+
+    <div class="dash-header">
+        <div>
+            <h1 class="dash-title">{{ current_user['name'] }}</h1>
+            <p class="dash-subtitle">{{ current_user['email'] }}</p>
+        </div>
+        <a href="{{ url_for('dashboard') }}" class="btn-ghost">Back to dashboard</a>
+    </div>
+
+    <!-- Account summary -------------------------------------------- -->
+
+    <div class="stat-row">
+        <div class="stat-card">
+            <span class="stat-label">Total tracked</span>
+            <span class="stat-value">₹{{ stats['total'] | rupees }}</span>
+        </div>
+        <div class="stat-card">
+            <span class="stat-label">Entries</span>
+            <span class="stat-value">{{ stats['entries'] }}</span>
+        </div>
+        <div class="stat-card">
+            <span class="stat-label">Top category</span>
+            <span class="stat-value">
+                {% if top_category %}{{ top_category['name'] }}{% else %}—{% endif %}
+            </span>
+        </div>
+    </div>
+
+    {% if stats['entries'] %}
+    <p class="profile-range">
+        Tracking from {{ stats['first_on'] }} to {{ stats['last_on'] }}.
+    </p>
+    {% else %}
+    <p class="profile-range">
+        No expenses recorded yet —
+        <a href="{{ url_for('dashboard') }}">add your first one</a>.
+    </p>
+    {% endif %}
+
+    <!-- Account details -------------------------------------------- -->
+
+    <div class="dash-panel profile-panel">
+        <h2 class="panel-title">Account details</h2>
+
+        <form method="POST" action="{{ url_for('update_profile') }}" class="add-form">
+            <div class="add-field add-field-wide">
+                <label for="name">Full name</label>
+                <input type="text" id="name" name="name" class="form-input"
+                       value="{{ current_user['name'] }}" required>
+            </div>
+            <div class="add-field add-field-wide">
+                <label for="email">Email address</label>
+                <input type="email" id="email" name="email" class="form-input"
+                       value="{{ current_user['email'] }}" required>
+            </div>
+            <div class="add-actions">
+                <button type="submit" class="btn-primary">Save changes</button>
+            </div>
+        </form>
+    </div>
+
+    <!-- Password --------------------------------------------------- -->
+
+    <div class="dash-panel profile-panel">
+        <h2 class="panel-title">Change password</h2>
+
+        <form method="POST" action="{{ url_for('change_password') }}" class="add-form">
+            <div class="add-field add-field-wide">
+                <label for="current_password">Current password</label>
+                <input type="password" id="current_password" name="current_password"
+                       class="form-input" autocomplete="current-password" required>
+            </div>
+            <div class="add-field add-field-wide">
+                <label for="new_password">New password</label>
+                <input type="password" id="new_password" name="new_password"
+                       class="form-input" placeholder="Min. 8 characters"
+                       autocomplete="new-password" minlength="8" required>
+            </div>
+            <div class="add-field add-field-wide">
+                <label for="confirm_password">Confirm new password</label>
+                <input type="password" id="confirm_password" name="confirm_password"
+                       class="form-input" autocomplete="new-password"
+                       minlength="8" required>
+            </div>
+            <div class="add-actions">
+                <button type="submit" class="btn-primary">Change password</button>
+            </div>
+        </form>
+    </div>
+
+</section>
+
+{% endblock %}
