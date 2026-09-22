@@ -26,10 +26,11 @@ monthly totals and a category breakdown.
 | Templating | Jinja2 |
 | Database | SQLite (`sqlite3`, standard library) — no ORM |
 | Auth | `werkzeug.security` hashing + Flask sessions |
+| CSRF | Flask-WTF 1.3.0 (`CSRFProtect`) |
 | Testing | pytest 8.3.5 + pytest-flask 1.3.0 |
 | Frontend | Vanilla CSS and JavaScript, no build step |
 
-Four direct dependencies. No Node, no bundler, no database server.
+Five direct dependencies. No Node, no bundler, no database server.
 
 ## Getting started
 
@@ -190,12 +191,15 @@ Routes marked ✅ require a session; anonymous visitors are redirected to
   the row exists.
 - **Login reports one message** for unknown email and wrong password alike, so the
   form can't be used to enumerate accounts.
+- **CSRF is enforced globally.** `CSRFProtect` rejects any POST without a valid
+  token, so a new form has to opt *out* rather than remember to opt in. Every form
+  carries `{{ csrf_token() }}` as a hidden field.
 
 ## Known gaps
 
-- **No CSRF tokens.** Every POST route accepts a cross-site submission. `Flask-WTF`
-  would cover all of them in one pass. This is the most important gap.
 - **`SECRET_KEY` has a hardcoded fallback** — see [Configuration](#configuration).
+  CSRF tokens are signed with it too, so a known key undermines that protection
+  as well as session integrity.
 - **`amount` is stored as `REAL`.** Floats can't represent every decimal exactly,
   so large sums can drift by fractions of a paisa. Integer paise is the rigorous
   alternative; cheaper to change before there's data to migrate.

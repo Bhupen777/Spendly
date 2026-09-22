@@ -12,6 +12,7 @@ from flask import (
     session,
     url_for,
 )
+from flask_wtf.csrf import CSRFError, CSRFProtect
 from werkzeug.security import check_password_hash, generate_password_hash
 
 from database import db
@@ -22,8 +23,23 @@ app = Flask(__name__)
 # that isn't local development.
 app.secret_key = os.environ.get("SECRET_KEY", "dev-only-insecure-key")
 
+# Rejects any POST without a valid token, so every form has to opt in rather
+# than remember to. Templates get csrf_token() for free.
+csrf = CSRFProtect(app)
+
 # Closes the request-scoped connection when each request ends.
 db.init_app(app)
+
+
+@app.errorhandler(CSRFError)
+def handle_csrf_error(error):
+    """Explain the usual cause — a stale tab — instead of a bare 400.
+
+    The redirect keeps its 302: a browser won't follow a 400, so pairing the
+    two would leave the user on a blank page with the message unread.
+    """
+    flash("That form expired. Please try again.", "error")
+    return redirect(request.referrer or url_for("landing"))
 
 
 # ------------------------------------------------------------------ #

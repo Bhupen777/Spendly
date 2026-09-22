@@ -50,6 +50,7 @@
         <h2 class="panel-title">Account details</h2>
 
         <form method="POST" action="{{ url_for('update_profile') }}" class="add-form">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <div class="add-field add-field-wide">
                 <label for="name">Full name</label>
                 <input type="text" id="name" name="name" class="form-input"
@@ -72,6 +73,7 @@
         <h2 class="panel-title">Change password</h2>
 
         <form method="POST" action="{{ url_for('change_password') }}" class="add-form">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <div class="add-field add-field-wide">
                 <label for="current_password">Current password</label>
                 <input type="password" id="current_password" name="current_password"
