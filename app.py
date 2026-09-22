@@ -1,10 +1,85 @@
-from flask import Flask, render_template
+import os
+from datetime import date
+from functools import wraps
+
+from flask import (
+    Flask,
+    flash,
+    redirect,
+    render_template,
+    request,
+    session,
+    url_for,
+)
+from werkzeug.security import check_password_hash, generate_password_hash
+
+from database import db
 
 app = Flask(__name__)
 
+# Sessions need a signing key. Set SECRET_KEY in the environment for anything
+# that isn't local development.
+app.secret_key = os.environ.get("SECRET_KEY", "dev-only-insecure-key")
+
+# Closes the request-scoped connection when each request ends.
+db.init_app(app)
+
 
 # ------------------------------------------------------------------ #
-# Routes                                                              #
+# Helpers                                                             #
+# ------------------------------------------------------------------ #
+
+def login_required(view):
+    """Redirect anonymous visitors to the sign-in page."""
+
+    @wraps(view)
+    def wrapped(*args, **kwargs):
+        if session.get("user_id") is None:
+            flash("Please sign in to continue.", "error")
+            return redirect(url_for("login", next=request.path))
+        return view(*args, **kwargs)
+
+    return wrapped
+
+
+@app.context_processor
+def inject_current_user():
+    """Make the signed-in user available to every template."""
+    user = None
+
+    if session.get("user_id") is not None:
+        user = db.get_db().execute(
+            "SELECT id, name, email FROM users WHERE id = ?",
+            (session["user_id"],),
+        ).fetchone()
+
+        # Session points at a user who no longer exists.
+        if user is None:
+            session.clear()
+
+    return {"current_user": user}
+
+
+@app.template_filter("rupees")
+def rupees(amount):
+    """Format a number the Indian way: 1234567.5 -> 12,34,567.50"""
+    whole, _, fraction = "{:.2f}".format(float(amount)).partition(".")
+
+    if len(whole) > 3:
+        last3, rest = whole[-3:], whole[:-3]
+        groups = []
+        while len(rest) > 2:
+            groups.insert(0, rest[-2:])
+            rest = rest[:-2]
+        if rest:
+            groups.insert(0, rest)
+        whole = ",".join(groups + [last3])
+
+    return "{}.{}".format(whole, fraction)
+
+
+# ------------------------------------------------------------------ #
+# Public routes                                                       #
 # ------------------------------------------------------------------ #
 
 @app.route("/")
@@ -12,14 +87,83 @@ def landing():
     return render_template("landing.html")
 
 
-@app.route("/register")
+@app.route("/register", methods=["GET", "POST"])
 def register():
+    if session.get("user_id") is not None:
+        return redirect(url_for("dashboard"))
+
+    if request.method == "POST":
+        name = request.form.get("name", "").strip()
+        email = request.form.get("email", "").strip()
+        password = request.form.get("password", "")
+
+        error = None
+        if not name:
+            error = "Please enter your name."
+        elif not email:
+            error = "Please enter your email address."
+        elif len(password) < 8:
+            error = "Password must be at least 8 characters."
+
+        if error is None:
+            conn = db.get_db()
+            existing = conn.execute(
+                "SELECT id FROM users WHERE email = ?", (email,)
+            ).fetchone()
+
+            if existing is not None:
+                error = "An account with that email already exists."
+            else:
+                cursor = conn.execute(
+                    "INSERT INTO users (name, email, password_hash) VALUES (?, ?, ?)",
+                    (name, email, generate_password_hash(password)),
+                )
+                conn.commit()
+
+                session.clear()
+                session["user_id"] = cursor.lastrowid
+                return redirect(url_for("dashboard"))
+
+        return render_template("register.html", error=error)
+
     return render_template("register.html")
 
 
-@app.route("/login")
+@app.route("/login", methods=["GET", "POST"])
 def login():
+    if session.get("user_id") is not None:
+        return redirect(url_for("dashboard"))
+
+    if request.method == "POST":
+        email = request.form.get("email", "").strip()
+        password = request.form.get("password", "")
+
+        user = db.get_db().execute(
+            "SELECT id, password_hash FROM users WHERE email = ?", (email,)
+        ).fetchone()
+
+        # One message for both cases, so the form can't be used to discover
+        # which email addresses have accounts.
+        if user is None or not check_password_hash(user["password_hash"], password):
+            return render_template("login.html", error="Incorrect email or password.")
+
+        session.clear()
+        session["user_id"] = user["id"]
+
+        destination = request.args.get("next")
+        if not destination or not destination.startswith("/"):
+            destination = url_for("dashboard")
+
+        return redirect(destination)
+
     return render_template("login.html")
+
+
+@app.route("/logout", methods=["POST"])
+def logout():
+    session.clear()
+    flash("You have been signed out.", "success")
+    return redirect(url_for("landing"))
 
 
 @app.route("/terms")
@@ -33,30 +177,124 @@ def privacy():
 
 
 # ------------------------------------------------------------------ #
+# Dashboard                                                           #
+# ------------------------------------------------------------------ #
+
+@app.route("/dashboard")
+@login_required
+def dashboard():
+    conn = db.get_db()
+    user_id = session["user_id"]
+    month_start = date.today().replace(day=1).isoformat()
+
+    expenses = conn.execute(
+        """
+        SELECT e.id, e.amount, e.description, e.spent_on, c.name AS category
+        FROM expenses e
+        JOIN categories c ON c.id = e.category_id
+        WHERE e.user_id = ?
+        ORDER BY e.spent_on DESC, e.id DESC
+        """,
+        (user_id,),
+    ).fetchall()
+
+    month_total = conn.execute(
+        """
+        SELECT COALESCE(SUM(amount), 0) AS total
+        FROM expenses
+        WHERE user_id = ? AND spent_on >= ?
+        """,
+        (user_id, month_start),
+    ).fetchone()["total"]
+
+    all_time_total = conn.execute(
+        "SELECT COALESCE(SUM(amount), 0) AS total FROM expenses WHERE user_id = ?",
+        (user_id,),
+    ).fetchone()["total"]
+
+    breakdown = conn.execute(
+        """
+        SELECT c.name, SUM(e.amount) AS total
+        FROM expenses e
+        JOIN categories c ON c.id = e.category_id
+        WHERE e.user_id = ? AND e.spent_on >= ?
+        GROUP BY c.name
+        ORDER BY total DESC
+        """,
+        (user_id, month_start),
+    ).fetchall()
+
+    categories = conn.execute(
+        "SELECT id, name FROM categories ORDER BY name"
+    ).fetchall()
+
+    # Widest bar in the breakdown sets the scale for the rest.
+    largest = breakdown[0]["total"] if breakdown else 0
+
+    return render_template(
+        "dashboard.html",
+        expenses=expenses,
+        month_total=month_total,
+        all_time_total=all_time_total,
+        breakdown=breakdown,
+        largest=largest,
+        categories=categories,
+        today=date.today().isoformat(),
+    )
+
+
+@app.route("/expenses/add", methods=["POST"])
+@login_required
+def add_expense():
+    amount_raw = request.form.get("amount", "").strip()
+    category_id = request.form.get("category_id", "").strip()
+    spent_on = request.form.get("spent_on", "").strip()
+    description = request.form.get("description", "").strip()
+
+    try:
+        amount = float(amount_raw)
+    except ValueError:
+        amount = 0
+
+    if amount <= 0:
+        flash("Enter an amount greater than zero.", "error")
+    elif not category_id:
+        flash("Choose a category.", "error")
+    elif not spent_on:
+        flash("Choose a date.", "error")
+    else:
+        conn = db.get_db()
+        conn.execute(
+            """
+            INSERT INTO expenses (user_id, category_id, amount, description, spent_on)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (session["user_id"], category_id, amount, description or None, spent_on),
+        )
+        conn.commit()
+        flash("Expense added.", "success")
+
+    return redirect(url_for("dashboard"))
+
+
+# ------------------------------------------------------------------ #
 # Placeholder routes — students will implement these                  #
 # ------------------------------------------------------------------ #
 
-@app.route("/logout")
-def logout():
-    return "Logout — coming in Step 3"
-
-
 @app.route("/profile")
+@login_required
 def profile():
     return "Profile page — coming in Step 4"
 
 
-@app.route("/expenses/add")
-def add_expense():
-    return "Add expense — coming in Step 7"
-
-
 @app.route("/expenses/<int:id>/edit")
+@login_required
 def edit_expense(id):
     return "Edit expense — coming in Step 8"
 
 
 @app.route("/expenses/<int:id>/delete")
+@login_required
 def delete_expense(id):
     return "Delete expense — coming in Step 9"
 

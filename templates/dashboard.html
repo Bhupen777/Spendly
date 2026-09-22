@@ -1,0 +1,174 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard — Spendly{% endblock %}
+
+{% block content %}
+
+<section class="dash">
+
+    <div class="dash-header">
+        <div>
+            <h1 class="dash-title">Hello, {{ current_user['name'] }}</h1>
+            <p class="dash-subtitle">Here's where your money went.</p>
+        </div>
+        <button type="button" class="btn-primary" data-add-toggle>Add expense</button>
+    </div>
+
+    <!-- Summary ---------------------------------------------------- -->
+
+    <div class="stat-row">
+        <div class="stat-card">
+            <span class="stat-label">This month</span>
+            <span class="stat-value">₹{{ month_total | rupees }}</span>
+        </div>
+        <div class="stat-card">
+            <span class="stat-label">All time</span>
+            <span class="stat-value">₹{{ all_time_total | rupees }}</span>
+        </div>
+        <div class="stat-card">
+            <span class="stat-label">Entries</span>
+            <span class="stat-value">{{ expenses | length }}</span>
+        </div>
+    </div>
+
+    <!-- Add expense ------------------------------------------------ -->
+
+    <div class="add-panel" data-add-panel hidden>
+        <form method="POST" action="{{ url_for('add_expense') }}" class="add-form">
+            <div class="add-field">
+                <label for="amount">Amount (₹)</label>
+                <input type="number" id="amount" name="amount" class="form-input"
+                       step="0.01" min="0.01" placeholder="450.00" required>
+            </div>
+            <div class="add-field">
+                <label for="category_id">Category</label>
+                <select id="category_id" name="category_id" class="form-input" required>
+                    {% for category in categories %}
+                    <option value="{{ category['id'] }}">{{ category['name'] }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="add-field">
+                <label for="spent_on">Date</label>
+                <input type="date" id="spent_on" name="spent_on" class="form-input"
+                       value="{{ today }}" max="{{ today }}" required>
+            </div>
+            <div class="add-field add-field-wide">
+                <label for="description">Description <span class="add-optional">optional</span></label>
+                <input type="text" id="description" name="description" class="form-input"
+                       placeholder="Groceries" maxlength="120">
+            </div>
+            <div class="add-actions">
+                <button type="submit" class="btn-primary">Save expense</button>
+                <button type="button" class="btn-ghost" data-add-cancel>Cancel</button>
+            </div>
+        </form>
+    </div>
+
+    <div class="dash-grid">
+
+        <!-- Expense list ------------------------------------------- -->
+
+        <div class="dash-panel">
+            <h2 class="panel-title">Recent expenses</h2>
+
+            {% if expenses %}
+            <div class="table-scroll">
+                <table class="expense-table">
+                    <thead>
+                        <tr>
+                            <th>Date</th>
+                            <th>Category</th>
+                            <th>Description</th>
+                            <th class="num">Amount</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for expense in expenses %}
+                        <tr>
+                            <td class="cell-date">{{ expense['spent_on'] }}</td>
+                            <td><span class="chip">{{ expense['category'] }}</span></td>
+                            <td class="cell-desc">{{ expense['description'] or '—' }}</td>
+                            <td class="num">₹{{ expense['amount'] | rupees }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+            <div class="empty-state">
+                <p class="empty-title">No expenses yet</p>
+                <p class="empty-body">Add your first one to see it appear here.</p>
+            </div>
+            {% endif %}
+        </div>
+
+        <!-- Category breakdown ------------------------------------- -->
+
+        <div class="dash-panel">
+            <h2 class="panel-title">This month by category</h2>
+
+            {% if breakdown %}
+            <div class="mock-bars">
+                {% for row in breakdown %}
+                <div class="mock-bar-row">
+                    <span class="mock-cat">{{ row['name'] }}</span>
+                    <div class="mock-bar-track">
+                        <div class="mock-bar mock-bar-{{ loop.index0 % 4 + 1 }}"
+                             style="width: {{ (row['total'] / largest * 100) | round(1) }}%"></div>
+                    </div>
+                    <span class="mock-amt">₹{{ row['total'] | rupees }}</span>
+                </div>
+                {% endfor %}
+            </div>
+            {% else %}
+            <div class="empty-state">
+                <p class="empty-body">Nothing recorded this month yet.</p>
+            </div>
+            {% endif %}
+        </div>
+
+    </div>
+
+</section>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+    "use strict";
+
+    var panel  = document.querySelector("[data-add-panel]");
+    var toggle = document.querySelector("[data-add-toggle]");
+    var cancel = document.querySelector("[data-add-cancel]");
+
+    if (!panel || !toggle) return;
+
+    function open() {
+        panel.hidden = false;
+        var amount = panel.querySelector("#amount");
+        if (amount) amount.focus();
+    }
+
+    function close() {
+        panel.hidden = true;
+        toggle.focus();
+    }
+
+    toggle.addEventListener("click", function () {
+        if (panel.hidden) { open(); } else { close(); }
+    });
+
+    if (cancel) cancel.addEventListener("click", close);
+
+    document.addEventListener("keydown", function (event) {
+        if (event.key === "Escape" && !panel.hidden) close();
+    });
+
+    // Reopen the form when a submission bounced back with an error, so the
+    // user isn't left wondering where their input went.
+    if (document.querySelector(".flash-error")) open();
+})();
+</script>
+{% endblock %}
