@@ -4,6 +4,7 @@ from functools import wraps
 
 from flask import (
     Flask,
+    abort,
     flash,
     redirect,
     render_template,
@@ -277,6 +278,31 @@ def add_expense():
     return redirect(url_for("dashboard"))
 
 
+@app.route("/expenses/<int:id>/delete", methods=["POST"])
+@login_required
+def delete_expense(id):
+    conn = db.get_db()
+
+    # Scoping the lookup to the signed-in user means someone else's id is
+    # indistinguishable from one that doesn't exist.
+    expense = conn.execute(
+        "SELECT id FROM expenses WHERE id = ? AND user_id = ?",
+        (id, session["user_id"]),
+    ).fetchone()
+
+    if expense is None:
+        abort(404)
+
+    conn.execute(
+        "DELETE FROM expenses WHERE id = ? AND user_id = ?",
+        (id, session["user_id"]),
+    )
+    conn.commit()
+
+    flash("Expense deleted.", "success")
+    return redirect(url_for("dashboard"))
+
+
 # ------------------------------------------------------------------ #
 # Placeholder routes — students will implement these                  #
 # ------------------------------------------------------------------ #
@@ -291,12 +317,6 @@ def profile():
 @login_required
 def edit_expense(id):
     return "Edit expense — coming in Step 8"
-
-
-@app.route("/expenses/<int:id>/delete")
-@login_required
-def delete_expense(id):
-    return "Delete expense — coming in Step 9"
 
 
 if __name__ == "__main__":

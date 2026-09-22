@@ -81,6 +81,7 @@
                             <th>Category</th>
                             <th>Description</th>
                             <th class="num">Amount</th>
+                            <th><span class="sr-only">Actions</span></th>
                         </tr>
                     </thead>
                     <tbody>
@@ -90,6 +91,17 @@
                             <td><span class="chip">{{ expense['category'] }}</span></td>
                             <td class="cell-desc">{{ expense['description'] or '—' }}</td>
                             <td class="num">₹{{ expense['amount'] | rupees }}</td>
+                            <td class="cell-actions">
+                                <form method="POST"
+                                      action="{{ url_for('delete_expense', id=expense['id']) }}"
+                                      data-confirm-delete
+                                      data-label="₹{{ expense['amount'] | rupees }} on {{ expense['spent_on'] }}">
+                                    <button type="submit" class="btn-delete"
+                                            aria-label="Delete expense of ₹{{ expense['amount'] | rupees }} on {{ expense['spent_on'] }}">
+                                        Delete
+                                    </button>
+                                </form>
+                            </td>
                         </tr>
                         {% endfor %}
                     </tbody>
@@ -169,6 +181,21 @@
     // Reopen the form when a submission bounced back with an error, so the
     // user isn't left wondering where their input went.
     if (document.querySelector(".flash-error")) open();
+})();
+
+(function () {
+    "use strict";
+
+    // Deleting is irreversible, so confirm before the POST goes out. The
+    // form still submits normally if this script never runs.
+    document.querySelectorAll("[data-confirm-delete]").forEach(function (form) {
+        form.addEventListener("submit", function (event) {
+            var label = form.getAttribute("data-label") || "this expense";
+            if (!window.confirm("Delete " + label + "? This cannot be undone.")) {
+                event.preventDefault();
+            }
+        });
+    });
 })();
 </script>
 {% endblock %}
