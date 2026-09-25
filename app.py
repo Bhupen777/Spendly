@@ -202,6 +202,16 @@ def login():
 # Phone + OTP                                                         #
 # ------------------------------------------------------------------ #
 
+def _dev_code_visible():
+    """Whether the code may be shown on screen.
+
+    Two conditions, both required: debug mode is on, and nothing is actually
+    being delivered. A configured gateway or a production run disables it, so
+    the code cannot surface in front of real users.
+    """
+    return bool(app.debug) and sms.get_backend().name == "console"
+
+
 def _start_verification(phone, purpose, pending_name=None):
     """Issue and send a code, then stash what the verify step needs.
 
@@ -219,6 +229,12 @@ def _start_verification(phone, purpose, pending_name=None):
 
     session["otp_phone"] = phone
     session["otp_purpose"] = purpose
+
+    if _dev_code_visible():
+        session["dev_otp"] = code
+    else:
+        session.pop("dev_otp", None)
+
     return None
 
 
@@ -276,6 +292,8 @@ def login_phone():
             # nothing can be entered that will work.
             session["otp_phone"] = phone
             session["otp_purpose"] = otp.PURPOSE_LOGIN
+            # No code exists, so make sure an older one isn't still on show.
+            session.pop("dev_otp", None)
             return redirect(url_for("verify_otp"))
 
         error = _start_verification(phone, otp.PURPOSE_LOGIN)
@@ -293,6 +311,15 @@ def verify_otp():
     phone = session.get("otp_phone")
     purpose = session.get("otp_purpose")
 
+    def render(error=None):
+        return render_template(
+            "verify_otp.html",
+            error=error,
+            masked=otp.mask_phone(phone),
+            purpose=purpose,
+            dev_code=session.get("dev_otp") if _dev_code_visible() else None,
+        )
+
     if not phone or not purpose:
         flash("Start by entering your mobile number.", "error")
         return redirect(url_for("login_phone"))
@@ -301,10 +328,7 @@ def verify_otp():
         row, error = otp.verify(phone, purpose, request.form.get("code", ""))
 
         if error is not None:
-            return render_template(
-                "verify_otp.html", error=error, masked=otp.mask_phone(phone),
-                purpose=purpose,
-            )
+            return render(error)
 
         conn = db.get_db()
 
@@ -337,12 +361,7 @@ def verify_otp():
             ).fetchone()
 
             if user is None:
-                return render_template(
-                    "verify_otp.html",
-                    error="That code is incorrect or has expired.",
-                    masked=otp.mask_phone(phone),
-                    purpose=purpose,
-                )
+                return render("That code is incorrect or has expired.")
 
             user_id = user["id"]
 
@@ -350,9 +369,7 @@ def verify_otp():
         session["user_id"] = user_id
         return redirect(url_for("dashboard"))
 
-    return render_template(
-        "verify_otp.html", masked=otp.mask_phone(phone), purpose=purpose
-    )
+    return render()
 
 
 @app.route("/verify/resend", methods=["POST"])

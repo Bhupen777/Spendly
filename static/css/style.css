@@ -644,6 +644,46 @@ button.nav-cta {
 
 .profile-phone-hint { margin-bottom: 1.25rem; }
 
+/* Development-only notice. Deliberately unmissable — if this ever shows up
+   somewhere it shouldn't, it should be obvious at a glance. */
+.dev-banner {
+    background: var(--accent-2-light);
+    border: 1px dashed var(--accent-2);
+    border-radius: var(--radius-md);
+    padding: 1rem 1.25rem;
+    margin-bottom: 1.5rem;
+}
+
+.dev-banner-tag {
+    display: inline-block;
+    background: var(--accent-2);
+    color: #fff;
+    font-size: 0.65rem;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    padding: 0.15rem 0.5rem;
+    border-radius: 999px;
+    margin-bottom: 0.6rem;
+}
+
+.dev-banner-body {
+    font-size: 0.875rem;
+    color: var(--ink-soft);
+}
+
+.dev-banner-code {
+    font-size: 1.15rem;
+    letter-spacing: 0.15em;
+    color: var(--ink);
+}
+
+.dev-banner-note {
+    font-size: 0.72rem;
+    color: var(--ink-muted);
+    margin-top: 0.5rem;
+}
+
 /* ------------------------------------------------------------------ */
 /* Footer                                                              */
 /* ------------------------------------------------------------------ */

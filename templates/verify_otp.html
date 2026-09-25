@@ -12,6 +12,19 @@
             <p class="auth-subtitle">We sent a 6-digit code to {{ masked }}</p>
         </div>
 
+        {% if dev_code %}
+        <div class="dev-banner">
+            <span class="dev-banner-tag">Dev only</span>
+            <p class="dev-banner-body">
+                No SMS gateway is configured, so nothing was sent. Your code is
+                <strong class="dev-banner-code">{{ dev_code }}</strong>
+            </p>
+            <p class="dev-banner-note">
+                This banner appears only in debug mode with the console backend.
+            </p>
+        </div>
+        {% endif %}
+
         <div class="auth-card">
             {% if error %}
             <div class="auth-error">{{ error }}</div>

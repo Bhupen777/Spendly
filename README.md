@@ -260,6 +260,11 @@ which numbers have accounts.
 > `console` is for development only — anyone who can read the log can sign in as
 > anyone.
 
+With `console` **and** debug mode on, the verify page also shows the code in a
+banner, so signing up locally doesn't mean reading the log. Both conditions are
+required: configuring a gateway hides it even in debug, because once codes are
+really being delivered, displaying them would be a live vulnerability.
+
 **Setting up MSG91.** Spendly generates and verifies its own codes, so it needs
 the Flow API (send a templated message), not MSG91's OTP API — that would issue
 and check codes itself and duplicate the hashing, expiry and rate limiting in
@@ -299,7 +304,7 @@ and registering it in `BACKENDS`.
 pytest
 ```
 
-135 tests:
+142 tests:
 
 | File | Covers |
 |---|---|
@@ -310,6 +315,7 @@ pytest
 | `test_profile.py` | account details, email collisions, password changes |
 | `test_security.py` | `login_required` on every private route, CSRF |
 | `test_sms.py` | backend selection, MSG91 payload and failure handling |
+| `test_dev_banner.py` | the dev-only code banner stays hidden outside development |
 
 Each test runs against a fresh SQLite file in a pytest `tmp_path`, created by
 monkeypatching `database.db.DB_PATH`. Your real `expense_tracker.db` is never
