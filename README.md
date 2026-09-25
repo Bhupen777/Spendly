@@ -105,7 +105,11 @@ The app starts on **http://127.0.0.1:5001** with debug mode and auto-reload enab
 | Variable | Required | Purpose |
 |---|---|---|
 | `SECRET_KEY` | yes | Signs session cookies and CSRF tokens |
-| `SMS_BACKEND` | no | How OTPs are delivered — `console` (default) or `null` |
+| `SMS_BACKEND` | no | How OTPs are delivered — `console` (default), `null`, or `msg91` |
+| `MSG91_AUTH_KEY` | with `msg91` | Auth key from the MSG91 dashboard |
+| `MSG91_TEMPLATE_ID` | with `msg91` | DLT-approved template id |
+| `MSG91_OTP_VAR` | no | Template variable holding the code (default `OTP`) |
+| `MSG91_SENDER` | no | Sender / DLT header, if your flow needs one |
 
 Settings are read from a `.env` file in the project root, which is gitignored.
 Copy the template and fill it in:
@@ -243,18 +247,46 @@ verify a sign-in.
 screen exactly as it would for a real one, so the form cannot be used to discover
 which numbers have accounts.
 
-**Delivery is not configured.** `auth/sms.py` ships a `console` backend that logs
-the code and a `null` backend that discards it. Add a real gateway by writing a
-class with a `send(phone, message)` method and registering it in `BACKENDS`.
+### Delivery
 
-> The console backend is for development only — anyone who can read the log can
-> sign in as anyone.
+`auth/sms.py` holds the backends, chosen with `SMS_BACKEND`:
+
+| Backend | Behaviour |
+|---|---|
+| `console` | Logs the code instead of sending it. **Default.** |
+| `null` | Discards it. Used by the tests. |
+| `msg91` | Sends it through MSG91's Flow API. |
+
+> `console` is for development only — anyone who can read the log can sign in as
+> anyone.
+
+**Setting up MSG91.** Spendly generates and verifies its own codes, so it needs
+the Flow API (send a templated message), not MSG91's OTP API — that would issue
+and check codes itself and duplicate the hashing, expiry and rate limiting in
+`auth/otp.py`.
+
+1. Register your sender ID and message template on the DLT portal. Indian
+   regulation requires this and approval takes a few days.
+2. Create a flow in MSG91 against that template with a variable for the code.
+3. Put the auth key and template id in `.env`, and set `SMS_BACKEND=msg91`.
+
+If your template names the variable something other than `OTP`, set
+`MSG91_OTP_VAR` to match — a mismatch is silently delivered as an empty code.
+
+Only the bare code is transmitted; the wording comes from your template. A
+delivery failure is reported to the user rather than leaving them waiting, and
+the reason is logged. Note that MSG91 returns HTTP 200 for rejected messages, so
+the backend checks the response body rather than the status code.
+
+Add another provider by writing a class with `send(phone, message, code=None)`
+and registering it in `BACKENDS`.
 
 ## Known gaps
 
-- **No SMS gateway.** Codes are logged, not sent — see
-  [One-time codes](#one-time-codes). This must be replaced before anyone can
-  sign in by phone outside development.
+- **MSG91 is implemented but unverified against the live API.** The backend and
+  its tests are written to MSG91's documented Flow contract, with the network
+  stubbed. Nobody has yet sent a real message through it — confirm the payload
+  against current MSG91 docs before relying on it.
 - **`amount` is stored as `REAL`.** Floats can't represent every decimal exactly,
   so large sums can drift by fractions of a paisa. Integer paise is the rigorous
   alternative; cheaper to change before there's data to migrate.
@@ -267,7 +299,7 @@ class with a `send(phone, message)` method and registering it in `BACKENDS`.
 pytest
 ```
 
-115 tests:
+135 tests:
 
 | File | Covers |
 |---|---|
@@ -277,6 +309,7 @@ pytest
 | `test_expenses.py` | dashboard, add / edit / delete, validation, ownership |
 | `test_profile.py` | account details, email collisions, password changes |
 | `test_security.py` | `login_required` on every private route, CSRF |
+| `test_sms.py` | backend selection, MSG91 payload and failure handling |
 
 Each test runs against a fresh SQLite file in a pytest `tmp_path`, created by
 monkeypatching `database.db.DB_PATH`. Your real `expense_tracker.db` is never

@@ -212,7 +212,10 @@ def _start_verification(phone, purpose, pending_name=None):
     if error is not None:
         return error
 
-    sms.send_otp(phone, code)
+    if not sms.send_otp(phone, code):
+        # Say so rather than leaving them watching for a code that isn't
+        # coming. The backend logs why.
+        return "We couldn't send a code to that number. Please try again shortly."
 
     session["otp_phone"] = phone
     session["otp_purpose"] = purpose
