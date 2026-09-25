@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+
+{% block title %}Enter your code — Spendly{% endblock %}
+
+{% block content %}
+
+<section class="auth-section">
+    <div class="auth-container">
+
+        <div class="auth-header">
+            <h1 class="auth-title">Enter your code</h1>
+            <p class="auth-subtitle">We sent a 6-digit code to {{ masked }}</p>
+        </div>
+
+        <div class="auth-card">
+            {% if error %}
+            <div class="auth-error">{{ error }}</div>
+            {% endif %}
+
+            <form method="POST" action="{{ url_for('verify_otp') }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <div class="form-group">
+                    <label for="code">Verification code</label>
+                    <input type="text" id="code" name="code"
+                           class="form-input otp-input"
+                           inputmode="numeric" pattern="[0-9]{6}" maxlength="6"
+                           autocomplete="one-time-code" placeholder="••••••"
+                           required autofocus>
+                </div>
+                <button type="submit" class="btn-submit">Verify</button>
+            </form>
+
+            <form method="POST" action="{{ url_for('resend_otp') }}" class="resend-form">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button type="submit" class="link-button">Didn't get it? Send another</button>
+            </form>
+        </div>
+
+        <p class="auth-switch">
+            Wrong number?
+            {% if purpose == 'register' %}
+            <a href="{{ url_for('register_phone') }}">Start over</a>
+            {% elif purpose == 'link' %}
+            <a href="{{ url_for('profile') }}">Back to profile</a>
+            {% else %}
+            <a href="{{ url_for('login_phone') }}">Start over</a>
+            {% endif %}
+        </p>
+
+    </div>
+</section>
+
+{% endblock %}

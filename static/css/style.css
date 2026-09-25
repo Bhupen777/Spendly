@@ -570,6 +570,80 @@ button.nav-cta {
 
 .auth-switch a:hover { text-decoration: underline; }
 
+/* Phone + OTP ------------------------------------------------------ */
+
+.phone-input {
+    display: flex;
+    align-items: stretch;
+}
+
+.phone-prefix {
+    display: flex;
+    align-items: center;
+    padding: 0 0.75rem;
+    background: var(--paper-warm);
+    border: 1px solid var(--border);
+    border-right: none;
+    border-radius: var(--radius-sm) 0 0 var(--radius-sm);
+    font-size: 0.9rem;
+    font-weight: 500;
+    color: var(--ink-soft);
+    white-space: nowrap;
+}
+
+.phone-input .form-input {
+    border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+    flex: 1;
+    min-width: 0;
+}
+
+.field-hint {
+    font-size: 0.78rem;
+    color: var(--ink-faint);
+    margin-top: 0.4rem;
+}
+
+.otp-input {
+    font-family: var(--font-body);
+    font-size: 1.5rem;
+    letter-spacing: 0.4em;
+    text-align: center;
+}
+
+.resend-form {
+    margin-top: 1rem;
+    text-align: center;
+}
+
+.link-button {
+    background: none;
+    border: none;
+    padding: 0;
+    font-family: var(--font-body);
+    font-size: 0.85rem;
+    color: var(--ink-muted);
+    text-decoration: underline;
+    cursor: pointer;
+}
+
+.link-button:hover { color: var(--ink); }
+
+.profile-phone {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    font-size: 0.95rem;
+    color: var(--ink);
+    margin-bottom: 0.4rem;
+}
+
+.chip-verified {
+    background: var(--accent-light);
+    color: var(--accent);
+}
+
+.profile-phone-hint { margin-bottom: 1.25rem; }
+
 /* ------------------------------------------------------------------ */
 /* Footer                                                              */
 /* ------------------------------------------------------------------ */

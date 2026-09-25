@@ -23,12 +23,18 @@ DB_PATH = os.path.join(BASE_DIR, "expense_tracker.db")
 
 
 SCHEMA = """
+-- email/password and phone are both optional individually, because an
+-- account can be created either way — but every account needs at least one
+-- of them, which the CHECK enforces.
 CREATE TABLE IF NOT EXISTS users (
     id            INTEGER PRIMARY KEY AUTOINCREMENT,
     name          TEXT NOT NULL,
-    email         TEXT NOT NULL COLLATE NOCASE UNIQUE,
-    password_hash TEXT NOT NULL,
-    created_at    TEXT NOT NULL DEFAULT (datetime('now'))
+    email         TEXT COLLATE NOCASE UNIQUE,
+    password_hash TEXT,
+    phone         TEXT,
+    created_at    TEXT NOT NULL DEFAULT (datetime('now')),
+
+    CHECK (email IS NOT NULL OR phone IS NOT NULL)
 );
 
 CREATE TABLE IF NOT EXISTS categories (
@@ -52,6 +58,48 @@ CREATE TABLE IF NOT EXISTS expenses (
 -- Every expense list is "this user, this date range", so index that pair.
 CREATE INDEX IF NOT EXISTS idx_expenses_user_date
     ON expenses (user_id, spent_on);
+
+-- One-time passcodes for phone sign-in. Codes are stored hashed, never in
+-- plain text, and rows are kept after use so resend and rate limits can
+-- count recent activity.
+CREATE TABLE IF NOT EXISTS otp_codes (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    phone       TEXT    NOT NULL,
+    code_hash   TEXT    NOT NULL,
+    purpose     TEXT    NOT NULL,
+    pending_name TEXT,
+    expires_at  TEXT    NOT NULL,
+    attempts    INTEGER NOT NULL DEFAULT 0,
+    consumed_at TEXT,
+    created_at  TEXT    NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_otp_phone_created
+    ON otp_codes (phone, created_at);
+"""
+
+
+# The users table shipped with email and password_hash as NOT NULL. Phone
+# sign-up fills in neither, and SQLite cannot relax a constraint in place, so
+# an existing database needs the table rebuilt.
+USERS_REBUILD = """
+CREATE TABLE users_rebuilt (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    name          TEXT NOT NULL,
+    email         TEXT COLLATE NOCASE UNIQUE,
+    password_hash TEXT,
+    phone         TEXT,
+    created_at    TEXT NOT NULL DEFAULT (datetime('now')),
+
+    CHECK (email IS NOT NULL OR phone IS NOT NULL)
+);
+
+INSERT INTO users_rebuilt (id, name, email, password_hash, phone, created_at)
+    SELECT id, name, email, password_hash, NULL, created_at FROM users;
+
+DROP TABLE users;
+
+ALTER TABLE users_rebuilt RENAME TO users;
 """
 
 
@@ -122,9 +170,53 @@ def init_db():
 
     try:
         conn.executescript(SCHEMA)
+        _migrate_users(conn)
+
+        # A partial index keeps the numbers that do exist unique while letting
+        # any number of accounts have none.
+        conn.execute(
+            """
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_users_phone
+                ON users (phone) WHERE phone IS NOT NULL
+            """
+        )
+
         conn.commit()
     finally:
         conn.close()
+
+
+def _migrate_users(conn):
+    """Bring an older users table up to the current shape."""
+    columns = {
+        row["name"]: row for row in conn.execute("PRAGMA table_info(users)")
+    }
+
+    if "phone" not in columns:
+        conn.execute("ALTER TABLE users ADD COLUMN phone TEXT")
+        columns = {
+            row["name"]: row for row in conn.execute("PRAGMA table_info(users)")
+        }
+
+    # notnull on email means this database predates phone sign-up.
+    if not columns["email"]["notnull"]:
+        return
+
+    # SQLite's documented rebuild: foreign keys off, or dropping users would
+    # cascade every expense away with it.
+    conn.commit()
+    conn.execute("PRAGMA foreign_keys = OFF")
+    try:
+        conn.executescript(USERS_REBUILD)
+        conn.commit()
+
+        broken = conn.execute("PRAGMA foreign_key_check").fetchall()
+        if broken:
+            raise RuntimeError(
+                "users rebuild left dangling references: {}".format(broken)
+            )
+    finally:
+        conn.execute("PRAGMA foreign_keys = ON")
 
 
 # ------------------------------------------------------------------ #

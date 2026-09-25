@@ -67,18 +67,65 @@
         </form>
     </div>
 
+    <!-- Mobile number ---------------------------------------------- -->
+
+    <div class="dash-panel profile-panel">
+        <h2 class="panel-title">Mobile number</h2>
+
+        {% if current_user['phone'] %}
+        <p class="profile-phone">
+            <span class="chip chip-verified">Verified</span>
+            {{ current_user['phone'] }}
+        </p>
+        <p class="field-hint">You can sign in with this number and a one-time code.</p>
+        {% else %}
+        <p class="field-hint profile-phone-hint">
+            Link a number to sign in with a one-time code instead of a password.
+        </p>
+        {% endif %}
+
+        <form method="POST" action="{{ url_for('link_phone') }}" class="add-form">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <div class="add-field add-field-wide">
+                <label for="phone">
+                    {% if current_user['phone'] %}Replace with{% else %}Mobile number{% endif %}
+                </label>
+                <div class="phone-input">
+                    <span class="phone-prefix">+91</span>
+                    <input type="tel" id="phone" name="phone" class="form-input"
+                           placeholder="98765 43210" inputmode="numeric"
+                           autocomplete="tel-national" maxlength="15" required>
+                </div>
+            </div>
+            <div class="add-actions">
+                <button type="submit" class="btn-primary">Send code</button>
+            </div>
+        </form>
+    </div>
+
     <!-- Password --------------------------------------------------- -->
 
     <div class="dash-panel profile-panel">
-        <h2 class="panel-title">Change password</h2>
+        <h2 class="panel-title">
+            {% if current_user['has_password'] %}Change password{% else %}Set a password{% endif %}
+        </h2>
+
+        {% if not current_user['has_password'] %}
+        <p class="field-hint profile-phone-hint">
+            Your account signs in by mobile code. Setting a password adds email
+            sign-in as a second way in.
+        </p>
+        {% endif %}
 
         <form method="POST" action="{{ url_for('change_password') }}" class="add-form">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            {% if current_user['has_password'] %}
             <div class="add-field add-field-wide">
                 <label for="current_password">Current password</label>
                 <input type="password" id="current_password" name="current_password"
                        class="form-input" autocomplete="current-password" required>
             </div>
+            {% endif %}
             <div class="add-field add-field-wide">
                 <label for="new_password">New password</label>
                 <input type="password" id="new_password" name="new_password"

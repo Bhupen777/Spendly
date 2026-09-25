@@ -10,13 +10,17 @@ import pytest
 
 # app.py raises at import if this is missing, and CI has no .env.
 os.environ.setdefault("SECRET_KEY", "test-key-never-used-outside-tests")
+# Tests must never try to deliver anything.
+os.environ["SMS_BACKEND"] = "null"
 
 import app as app_module  # noqa: E402
+from auth import otp as otp_module  # noqa: E402
 from database import db as db_module  # noqa: E402
 
 
 DEMO_EMAIL = "demo@spendly.app"
 DEMO_PASSWORD = "spendly123"
+DEMO_PHONE = "+919876500001"
 
 
 @pytest.fixture
@@ -79,6 +83,40 @@ def other_user(conn):
     conn.commit()
 
     return {"id": user_id, "expense_id": cursor.lastrowid}
+
+
+@pytest.fixture
+def captured_codes(monkeypatch):
+    """Intercept outgoing codes so tests can read what was sent."""
+    sent = []
+
+    def fake_send(phone, code):
+        sent.append({"phone": phone, "code": code})
+        return True
+
+    monkeypatch.setattr(app_module.sms, "send_otp", fake_send)
+    return sent
+
+
+@pytest.fixture
+def no_cooldown(monkeypatch):
+    """Drop the resend cooldown, for tests issuing several codes in a row."""
+    from datetime import timedelta
+
+    monkeypatch.setattr(otp_module, "RESEND_COOLDOWN", timedelta(seconds=0))
+
+
+@pytest.fixture
+def phone_user(conn):
+    """An account that signs in by phone only — no email, no password."""
+    conn.execute(
+        "INSERT INTO users (name, phone) VALUES (?, ?)", ("Phone Person", DEMO_PHONE)
+    )
+    conn.commit()
+
+    return conn.execute(
+        "SELECT id, name, phone FROM users WHERE phone = ?", (DEMO_PHONE,)
+    ).fetchone()["id"]
 
 
 @pytest.fixture

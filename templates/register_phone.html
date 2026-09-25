@@ -9,7 +9,7 @@
 
         <div class="auth-header">
             <h1 class="auth-title">Create your account</h1>
-            <p class="auth-subtitle">Start tracking your expenses today</p>
+            <p class="auth-subtitle">We'll text you a code to confirm your number</p>
         </div>
 
         <div class="auth-card">
@@ -17,7 +17,7 @@
             <div class="auth-error">{{ error }}</div>
             {% endif %}
 
-            <form method="POST" action="/register">
+            <form method="POST" action="{{ url_for('register_phone') }}">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <div class="form-group">
                     <label for="name">Full name</label>
@@ -26,28 +26,28 @@
                            required autofocus>
                 </div>
                 <div class="form-group">
-                    <label for="email">Email address</label>
-                    <input type="email" id="email" name="email"
-                           class="form-input" placeholder="nitish@example.com"
-                           required>
+                    <label for="phone">Mobile number</label>
+                    <div class="phone-input">
+                        <span class="phone-prefix">+91</span>
+                        <input type="tel" id="phone" name="phone"
+                               class="form-input" placeholder="98765 43210"
+                               inputmode="numeric" autocomplete="tel-national"
+                               maxlength="15" required>
+                    </div>
+                    <p class="field-hint">Indian mobile numbers only</p>
                 </div>
-                <div class="form-group">
-                    <label for="password">Password</label>
-                    <input type="password" id="password" name="password"
-                           class="form-input" placeholder="Min. 8 characters"
-                           required>
-                </div>
-                <button type="submit" class="btn-submit">Create account</button>
+                <button type="submit" class="btn-submit">Send code</button>
             </form>
         </div>
 
         <p class="auth-switch">
-            <a href="{{ url_for('register_phone') }}">Sign up with a mobile number instead</a>
+            Prefer email?
+            <a href="{{ url_for('register') }}">Sign up with an email address</a>
         </p>
 
         <p class="auth-switch">
             Already have an account?
-            <a href="{{ url_for('login') }}">Sign in</a>
+            <a href="{{ url_for('login_phone') }}">Sign in</a>
         </p>
 
     </div>

@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+
+{% block title %}Sign in — Spendly{% endblock %}
+
+{% block content %}
+
+<section class="auth-section">
+    <div class="auth-container">
+
+        <div class="auth-header">
+            <h1 class="auth-title">Welcome back</h1>
+            <p class="auth-subtitle">Enter your mobile number to get a code</p>
+        </div>
+
+        <div class="auth-card">
+            {% if error %}
+            <div class="auth-error">{{ error }}</div>
+            {% endif %}
+
+            <form method="POST" action="{{ url_for('login_phone') }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <div class="form-group">
+                    <label for="phone">Mobile number</label>
+                    <div class="phone-input">
+                        <span class="phone-prefix">+91</span>
+                        <input type="tel" id="phone" name="phone"
+                               class="form-input" placeholder="98765 43210"
+                               inputmode="numeric" autocomplete="tel-national"
+                               maxlength="15" required autofocus>
+                    </div>
+                </div>
+                <button type="submit" class="btn-submit">Send code</button>
+            </form>
+        </div>
+
+        <p class="auth-switch">
+            Prefer email?
+            <a href="{{ url_for('login') }}">Sign in with email and password</a>
+        </p>
+
+        <p class="auth-switch">
+            Don't have an account?
+            <a href="{{ url_for('register_phone') }}">Create one free</a>
+        </p>
+
+    </div>
+</section>
+
+{% endblock %}

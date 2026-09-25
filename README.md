@@ -11,7 +11,8 @@ monthly totals and a category breakdown.
 
 ## Features
 
-- **Accounts** — register and sign in; passwords are hashed, never stored in plain text
+- **Two ways in** — email and password, or an Indian mobile number with a one-time
+  code. Passwords and OTPs are both hashed, never stored in plain text
 - **Dashboard** — every expense listed newest-first, with monthly and all-time totals
 - **Category breakdown** — current month's spending by category, as scaled bars
 - **Full CRUD** — add expenses inline, edit them on their own page, delete with confirmation
@@ -25,7 +26,7 @@ monthly totals and a category breakdown.
 | Framework | Flask 3.1.3 |
 | Templating | Jinja2 |
 | Database | SQLite (`sqlite3`, standard library) — no ORM |
-| Auth | `werkzeug.security` hashing + Flask sessions |
+| Auth | `werkzeug.security` hashing + Flask sessions, or phone + OTP |
 | CSRF | Flask-WTF 1.3.0 (`CSRFProtect`) |
 | Config | python-dotenv 1.2.3 (`.env`) |
 | Testing | pytest 8.3.5 + pytest-flask 1.3.0 |
@@ -104,6 +105,7 @@ The app starts on **http://127.0.0.1:5001** with debug mode and auto-reload enab
 | Variable | Required | Purpose |
 |---|---|---|
 | `SECRET_KEY` | yes | Signs session cookies and CSRF tokens |
+| `SMS_BACKEND` | no | How OTPs are delivered — `console` (default) or `null` |
 
 Settings are read from a `.env` file in the project root, which is gitignored.
 Copy the template and fill it in:
@@ -133,14 +135,21 @@ expense-tracker/
 ├── app.py                    # Routes, auth helpers, template filters
 ├── requirements.txt          # Pinned dependencies
 ├── .env.example              # Template for .env (gitignored)
+├── auth/
+│   ├── __init__.py
+│   ├── otp.py                # Number parsing, code issuing and verifying
+│   └── sms.py                # Pluggable delivery backends
 ├── database/
 │   ├── __init__.py
-│   └── db.py                 # Connection, schema, seed data
+│   └── db.py                 # Connection, schema, migrations, seed data
 ├── templates/
 │   ├── base.html             # Shared layout — navbar, flashes, footer
 │   ├── landing.html          # Marketing / home page
 │   ├── login.html
 │   ├── register.html
+│   ├── register_phone.html
+│   ├── login_phone.html
+│   ├── verify_otp.html
 │   ├── dashboard.html        # Expense list, totals, add form
 │   ├── edit_expense.html
 │   ├── profile.html
@@ -153,14 +162,27 @@ expense-tracker/
 
 ## Database
 
-Three tables, created by `init_db()`:
+Four tables, created by `init_db()`:
 
 ```sql
-users       id, name, email (UNIQUE, case-insensitive), password_hash, created_at
+users       id, name, email (UNIQUE, case-insensitive), password_hash,
+            phone (UNIQUE where present), created_at
+            CHECK (email IS NOT NULL OR phone IS NOT NULL)
 categories  id, name (UNIQUE)
 expenses    id, user_id → users, category_id → categories,
             amount (CHECK > 0), description, spent_on, created_at
+otp_codes   id, phone, code_hash, purpose, pending_name,
+            expires_at, attempts, consumed_at, created_at
 ```
+
+Email and phone are each optional so an account can be created either way, but
+the `CHECK` means every account keeps at least one identifier.
+
+`init_db()` migrates older databases in place: it adds `users.phone`, and if
+`email` is still `NOT NULL` it rebuilds the table, since SQLite cannot relax a
+constraint with `ALTER`. The rebuild disables foreign keys for the swap —
+dropping `users` with them on would cascade every expense away — and verifies
+`PRAGMA foreign_key_check` afterwards.
 
 Indexed on `(user_id, spent_on)`, since every expense query filters that pair.
 
@@ -176,8 +198,12 @@ by `db.init_app(app)` in `app.py`.
 | Route | Methods | Auth | Purpose |
 |---|---|---|---|
 | `/` | GET | — | Landing page |
-| `/register` | GET, POST | — | Create an account |
-| `/login` | GET, POST | — | Sign in |
+| `/register` | GET, POST | — | Create an account with email and password |
+| `/login` | GET, POST | — | Sign in with email and password |
+| `/register/phone` | GET, POST | — | Create an account with a mobile number |
+| `/login/phone` | GET, POST | — | Request a sign-in code |
+| `/verify` | GET, POST | — | Enter the code |
+| `/verify/resend` | POST | — | Request another code |
 | `/logout` | POST | — | Sign out |
 | `/terms` | GET | — | Terms and Conditions |
 | `/privacy` | GET | — | Privacy Policy |
@@ -187,7 +213,8 @@ by `db.init_app(app)` in `app.py`.
 | `/expenses/<id>/delete` | POST | ✅ | Delete an expense |
 | `/profile` | GET | ✅ | Account summary |
 | `/profile/details` | POST | ✅ | Update name and email |
-| `/profile/password` | POST | ✅ | Change password |
+| `/profile/phone` | POST | ✅ | Link or replace a mobile number |
+| `/profile/password` | POST | ✅ | Set or change password |
 
 Routes marked ✅ require a session; anonymous visitors are redirected to
 `/login?next=…` and returned afterwards.
@@ -205,7 +232,29 @@ Routes marked ✅ require a session; anonymous visitors are redirected to
   token, so a new form has to opt *out* rather than remember to opt in. Every form
   carries `{{ csrf_token() }}` as a hidden field.
 
+### One-time codes
+
+Six digits, stored hashed, valid for five minutes, and limited three ways: five
+guesses per code, a sixty-second resend cooldown, and five codes per number per
+hour. A consumed code cannot be replayed, and a code issued for sign-up will not
+verify a sign-in.
+
+`/login/phone` sends nothing for an unregistered number but moves to the verify
+screen exactly as it would for a real one, so the form cannot be used to discover
+which numbers have accounts.
+
+**Delivery is not configured.** `auth/sms.py` ships a `console` backend that logs
+the code and a `null` backend that discards it. Add a real gateway by writing a
+class with a `send(phone, message)` method and registering it in `BACKENDS`.
+
+> The console backend is for development only — anyone who can read the log can
+> sign in as anyone.
+
 ## Known gaps
+
+- **No SMS gateway.** Codes are logged, not sent — see
+  [One-time codes](#one-time-codes). This must be replaced before anyone can
+  sign in by phone outside development.
 - **`amount` is stored as `REAL`.** Floats can't represent every decimal exactly,
   so large sums can drift by fractions of a paisa. Integer paise is the rigorous
   alternative; cheaper to change before there's data to migrate.
@@ -218,12 +267,13 @@ Routes marked ✅ require a session; anonymous visitors are redirected to
 pytest
 ```
 
-73 tests across four files:
+115 tests:
 
 | File | Covers |
 |---|---|
 | `test_database.py` | schema, the `foreign_keys` pragma, seed idempotency, constraints, connection lifecycle |
 | `test_auth.py` | registration, hashing, login, account enumeration, logout |
+| `test_phone_auth.py` | number parsing, OTP issuing and verifying, rate limits, sign-up / sign-in / linking |
 | `test_expenses.py` | dashboard, add / edit / delete, validation, ownership |
 | `test_profile.py` | account details, email collisions, password changes |
 | `test_security.py` | `login_required` on every private route, CSRF |
@@ -234,7 +284,8 @@ opened, so the suite is safe to run at any time.
 
 CSRF is disabled in the default fixture so behavioural tests don't have to thread
 tokens through every request; `test_security.py` turns it back on to test the
-protection itself.
+protection itself. `SMS_BACKEND` is forced to `null`, and a `captured_codes`
+fixture intercepts outgoing codes so tests can read them.
 
 ## License
 

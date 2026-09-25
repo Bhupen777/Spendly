@@ -16,6 +16,7 @@ from dotenv import load_dotenv
 from flask_wtf.csrf import CSRFError, CSRFProtect
 from werkzeug.security import check_password_hash, generate_password_hash
 
+from auth import otp, sms
 from database import db
 
 # Reads .env into the environment. Real environment variables win, so a
@@ -83,7 +84,11 @@ def inject_current_user():
 
     if session.get("user_id") is not None:
         user = db.get_db().execute(
-            "SELECT id, name, email FROM users WHERE id = ?",
+            """
+            SELECT id, name, email, phone,
+                   password_hash IS NOT NULL AS has_password
+            FROM users WHERE id = ?
+            """,
             (session["user_id"],),
         ).fetchone()
 
@@ -191,6 +196,187 @@ def login():
         return redirect(destination)
 
     return render_template("login.html")
+
+
+# ------------------------------------------------------------------ #
+# Phone + OTP                                                         #
+# ------------------------------------------------------------------ #
+
+def _start_verification(phone, purpose, pending_name=None):
+    """Issue and send a code, then stash what the verify step needs.
+
+    Returns an error string, or None on success.
+    """
+    code, error = otp.issue(phone, purpose, pending_name)
+
+    if error is not None:
+        return error
+
+    sms.send_otp(phone, code)
+
+    session["otp_phone"] = phone
+    session["otp_purpose"] = purpose
+    return None
+
+
+@app.route("/register/phone", methods=["GET", "POST"])
+def register_phone():
+    if session.get("user_id") is not None:
+        return redirect(url_for("dashboard"))
+
+    if request.method == "POST":
+        name = request.form.get("name", "").strip()
+        phone = otp.normalize_phone(request.form.get("phone", ""))
+
+        if not name:
+            error = "Please enter your name."
+        elif phone is None:
+            error = "Enter a valid Indian mobile number."
+        else:
+            existing = db.get_db().execute(
+                "SELECT id FROM users WHERE phone = ?", (phone,)
+            ).fetchone()
+
+            if existing is not None:
+                error = "That number already has an account. Sign in instead."
+            else:
+                error = _start_verification(phone, otp.PURPOSE_REGISTER, name)
+
+        if error is not None:
+            return render_template("register_phone.html", error=error)
+
+        return redirect(url_for("verify_otp"))
+
+    return render_template("register_phone.html")
+
+
+@app.route("/login/phone", methods=["GET", "POST"])
+def login_phone():
+    if session.get("user_id") is not None:
+        return redirect(url_for("dashboard"))
+
+    if request.method == "POST":
+        phone = otp.normalize_phone(request.form.get("phone", ""))
+
+        if phone is None:
+            return render_template(
+                "login_phone.html", error="Enter a valid Indian mobile number."
+            )
+
+        known = db.get_db().execute(
+            "SELECT id FROM users WHERE phone = ?", (phone,)
+        ).fetchone()
+
+        if known is None:
+            # Move to the verify screen regardless, so the form can't be used
+            # to discover which numbers are registered. No code is sent, so
+            # nothing can be entered that will work.
+            session["otp_phone"] = phone
+            session["otp_purpose"] = otp.PURPOSE_LOGIN
+            return redirect(url_for("verify_otp"))
+
+        error = _start_verification(phone, otp.PURPOSE_LOGIN)
+
+        if error is not None:
+            return render_template("login_phone.html", error=error)
+
+        return redirect(url_for("verify_otp"))
+
+    return render_template("login_phone.html")
+
+
+@app.route("/verify", methods=["GET", "POST"])
+def verify_otp():
+    phone = session.get("otp_phone")
+    purpose = session.get("otp_purpose")
+
+    if not phone or not purpose:
+        flash("Start by entering your mobile number.", "error")
+        return redirect(url_for("login_phone"))
+
+    if request.method == "POST":
+        row, error = otp.verify(phone, purpose, request.form.get("code", ""))
+
+        if error is not None:
+            return render_template(
+                "verify_otp.html", error=error, masked=otp.mask_phone(phone),
+                purpose=purpose,
+            )
+
+        conn = db.get_db()
+
+        if purpose == otp.PURPOSE_REGISTER:
+            cursor = conn.execute(
+                "INSERT INTO users (name, phone) VALUES (?, ?)",
+                (row["pending_name"], phone),
+            )
+            conn.commit()
+            user_id = cursor.lastrowid
+
+        elif purpose == otp.PURPOSE_LINK:
+            user_id = session.get("user_id")
+            if user_id is None:
+                return redirect(url_for("login"))
+
+            conn.execute(
+                "UPDATE users SET phone = ? WHERE id = ?", (phone, user_id)
+            )
+            conn.commit()
+
+            session.pop("otp_phone", None)
+            session.pop("otp_purpose", None)
+            flash("Mobile number verified.", "success")
+            return redirect(url_for("profile"))
+
+        else:
+            user = conn.execute(
+                "SELECT id FROM users WHERE phone = ?", (phone,)
+            ).fetchone()
+
+            if user is None:
+                return render_template(
+                    "verify_otp.html",
+                    error="That code is incorrect or has expired.",
+                    masked=otp.mask_phone(phone),
+                    purpose=purpose,
+                )
+
+            user_id = user["id"]
+
+        session.clear()
+        session["user_id"] = user_id
+        return redirect(url_for("dashboard"))
+
+    return render_template(
+        "verify_otp.html", masked=otp.mask_phone(phone), purpose=purpose
+    )
+
+
+@app.route("/verify/resend", methods=["POST"])
+def resend_otp():
+    phone = session.get("otp_phone")
+    purpose = session.get("otp_purpose")
+
+    if not phone or not purpose:
+        return redirect(url_for("login_phone"))
+
+    # Registration carries the pending name on the previous code; reuse it so
+    # a resend doesn't lose it.
+    previous = db.get_db().execute(
+        """
+        SELECT pending_name FROM otp_codes
+        WHERE phone = ? AND purpose = ?
+        ORDER BY id DESC LIMIT 1
+        """,
+        (phone, purpose),
+    ).fetchone()
+
+    error = _start_verification(
+        phone, purpose, previous["pending_name"] if previous else None
+    )
+
+    flash(error or "A new code is on its way.", "error" if error else "success")
+    return redirect(url_for("verify_otp"))
 
 
 @app.route("/logout", methods=["POST"])
@@ -505,6 +691,34 @@ def update_profile():
     return redirect(url_for("profile"))
 
 
+@app.route("/profile/phone", methods=["POST"])
+@login_required
+def link_phone():
+    """Start verifying a mobile number for an existing account."""
+    phone = otp.normalize_phone(request.form.get("phone", ""))
+
+    if phone is None:
+        flash("Enter a valid Indian mobile number.", "error")
+        return redirect(url_for("profile"))
+
+    taken = db.get_db().execute(
+        "SELECT id FROM users WHERE phone = ? AND id != ?",
+        (phone, session["user_id"]),
+    ).fetchone()
+
+    if taken is not None:
+        flash("That number is already linked to another account.", "error")
+        return redirect(url_for("profile"))
+
+    error = _start_verification(phone, otp.PURPOSE_LINK)
+
+    if error is not None:
+        flash(error, "error")
+        return redirect(url_for("profile"))
+
+    return redirect(url_for("verify_otp"))
+
+
 @app.route("/profile/password", methods=["POST"])
 @login_required
 def change_password():
@@ -518,6 +732,23 @@ def change_password():
     user = conn.execute(
         "SELECT password_hash FROM users WHERE id = ?", (user_id,)
     ).fetchone()
+
+    if user["password_hash"] is None:
+        # Phone-only account: there is no current password to check against,
+        # so let them set one by confirming the new value twice.
+        if len(new) < 8:
+            flash("New password must be at least 8 characters.", "error")
+        elif new != confirm:
+            flash("New passwords do not match.", "error")
+        else:
+            conn.execute(
+                "UPDATE users SET password_hash = ? WHERE id = ?",
+                (generate_password_hash(new), user_id),
+            )
+            conn.commit()
+            flash("Password set.", "success")
+
+        return redirect(url_for("profile"))
 
     if not check_password_hash(user["password_hash"], current):
         flash("Your current password is incorrect.", "error")
