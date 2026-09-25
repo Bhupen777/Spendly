@@ -209,18 +209,32 @@ Routes marked ✅ require a session; anonymous visitors are redirected to
 - **`amount` is stored as `REAL`.** Floats can't represent every decimal exactly,
   so large sums can drift by fractions of a paisa. Integer paise is the rigorous
   alternative; cheaper to change before there's data to migrate.
-- **No tests.** pytest and pytest-flask are installed but `tests/` doesn't exist.
 - **Dev server only.** `app.run(debug=True)` is not for production — use a WSGI
   server such as Waitress or Gunicorn.
 
 ## Testing
 
-pytest and pytest-flask are installed, but no tests have been written yet.
-Once a `tests/` directory exists:
-
 ```bash
 pytest
 ```
+
+73 tests across four files:
+
+| File | Covers |
+|---|---|
+| `test_database.py` | schema, the `foreign_keys` pragma, seed idempotency, constraints, connection lifecycle |
+| `test_auth.py` | registration, hashing, login, account enumeration, logout |
+| `test_expenses.py` | dashboard, add / edit / delete, validation, ownership |
+| `test_profile.py` | account details, email collisions, password changes |
+| `test_security.py` | `login_required` on every private route, CSRF |
+
+Each test runs against a fresh SQLite file in a pytest `tmp_path`, created by
+monkeypatching `database.db.DB_PATH`. Your real `expense_tracker.db` is never
+opened, so the suite is safe to run at any time.
+
+CSRF is disabled in the default fixture so behavioural tests don't have to thread
+tokens through every request; `test_security.py` turns it back on to test the
+protection itself.
 
 ## License
 
